@@ -273,13 +273,13 @@ function mainKS()
     rho = 0.966
     s = 0.5
     sig = s * sqrt(1 - rho^2)
-    params = Params(0.96, 1.0, sig, rho, 0.025, 0.11, 0.0001, 200, 7, 300)
+    params = Params(0.96, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300)
     
     # Setting up the model
-    BaseModel = setup_Aiyagari(params, a_min=0.0, a_max=200.0)
+    BaseModel = setup_Aiyagari(params)
     
     # Solving for the steady state
-    ss = steady_state(BaseModel)
+    ss = solve_SteadyState(BaseModel, guess=(0.01, 0.10))
 
     # Solve the KS model
     solution = solveKS(BaseModel, ss)

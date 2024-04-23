@@ -3,13 +3,13 @@ Pkg.activate(".")
 Pkg.instantiate()
 
 using LinearAlgebra, Plots, Distributions, SparseArrays, 
-UnPack, BenchmarkTools, Profile, ProfileView
+UnPack, BenchmarkTools, Profile, ProfileView, Roots
 
-import Optim, IterativeSolvers, Interpolations, NLsolve
+import IterativeSolvers, Interpolations
 
+include("GeneralStructures.jl")
 include("HelperFunctions.jl")
 include("Household.jl")
-include("GeneralStructures.jl")
 
 """
     aggregate_labor(Π::Matrix{Float64}, 
@@ -60,11 +60,10 @@ end
     parameters of the model (Params type) and the parameters of the solution
     (SolutionParams type) and returns an instance of the AiyagariModel type.
 """
-function setup_Aiyagari(params::Params;
-    a_min::Float64 = 0.0,
-    a_max::Float64 = 200.0)
+function setup_Aiyagari(params::Params)
     
-    @unpack σ, ρ, n_a, n_e = params
+    @unpack σ, ρ, n_a, n_e, gridx = params
+    a_min, a_max = gridx
     shockgrid, Π = normalized_shockprocess(σ, ρ, n_e)
     a_values = range(a_min, stop=a_max, length=n_a)
     policygrid = collect(a_values)
@@ -113,18 +112,18 @@ end
     of wealth, the prices, and the aggregate capital and labor.
 """
 function solve_SteadyState(BaseModel::AiyagariModel;
-    guess = 0.03)
+    guess = (0.01, 0.10))
     
-    # function to obtain residual
-    function residual(r_guess::Float64)
-        steadystate = SingleRun(r_guess, BaseModel)
-        agg_ks = steadystate.aggregates.agg_ks
-        agg_kd = (D' * spolicy)[1,1]
+    # internal function to obtain residual
+    function get_residual(r_guess::Float64)
+        ss = SingleRun(r_guess, BaseModel)
+        agg_ks = ss.aggregates.agg_ks
+        spolicy = vcat(ss.policies.saving...)
+        agg_kd = (ss.D' * spolicy)[1,1]
         return agg_kd - agg_ks
     end
 
-    x0 = guess
-    r = Optim.find_zero(residual, x0, Roots.Newton())
+    r = find_zero(get_residual, guess, Bisection())
     
     solution = SingleRun(r, BaseModel)
     
@@ -143,13 +142,13 @@ function main(printsol::Bool = false)
     rho = 0.966
     s = 0.5
     sig = s * sqrt(1 - rho^2)
-    params = Params(0.96, 1.0, sig, rho, 0.025, 0.11, 0.0001, 200, 7, 300)
+    params = Params(0.96, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300)
     
     # Setting up the model
-    BaseModel = setup_Aiyagari(params, a_min=0.0, a_max=200.0)
+    BaseModel = setup_Aiyagari(params)
     
     # Solving for the steady state
-    sol = solve_SteadyState(BaseModel, guess=0.03)
+    sol = solve_SteadyState(BaseModel, guess=(0.01, 0.10))
 
     if printsol
         println("Steady state interest rate: ", sol.prices.r)

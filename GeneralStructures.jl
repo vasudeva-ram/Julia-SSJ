@@ -19,6 +19,7 @@ struct Params{TF<:Float64, TI<:Int64}
     δ::TF # depreciation rate
     α::TF # share of capital in production
     dx::TF # size of infinitesimal shock for numerical differentiation
+    gridx::Vector{TF} # [a_min, a_max] bounds for the savings grid
     n_a::TI # number of grid points for the savings grid
     n_e::TI # number of grid points for the shock grid
     T::TI # number of periods for the transition path
