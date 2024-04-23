@@ -9,65 +9,6 @@ import Optim, IterativeSolvers, Interpolations, NLsolve
 
 include("ShockDiscretization.jl")
 
-# Defining structs for use in solving the model
-
-struct Params{TF<:Float64, TI<:Int64}
-    β::TF # discount factor
-    γ::TF # coefficient of relative risk aversion
-    σ::TF # standard deviation of the shock process
-    ρ::TF # persistence of the shock process
-    δ::TF # depreciation rate
-    α::TF # share of capital in production
-    dx::TF # size of infinitesimal shock for numerical differentiation
-    n_a::TI # number of grid points for the savings grid
-    n_e::TI # number of grid points for the shock grid
-    T::TI # number of periods for the transition path
-end
-
-struct Prices{TF<:Float64}
-    r::TF
-    w::TF
-end
-
-struct Aggregates{TF<:Float64}
-    agg_ks::TF
-    agg_labor::TF
-end
-
-struct AiyagariModel{TF<:Float64}
-    params::Params # parameters of the model
-    policygrid::Vector{TF} # grid of policy choices
-    policymat::Matrix{TF} # grid of policy choices, repeated for each shock
-    initialguess::Matrix{TF} # initial guess for the policy function
-    shockgrid::Vector{TF} # grid of shocks, obtained from `normalized_shockprocess()` function
-    shockmat::AbstractArray{TF, 2} # grid of shocks, repeated for each policy choice
-    Π::Matrix{TF} # transition matrix for the exogenous shock process, obtained from `normalized_shockprocess()` function
-end
-
-struct SteadyState{TF<:Float64}
-    prices::Prices # steady state prices
-    policies::NamedTuple{(:saving, :consumption), Tuple{Matrix{TF}, Matrix{TF}}} # savings and consumption policies
-    D::Vector{TF} # steady state distribution of wealth
-    aggregates::Aggregates # steady state aggregate capital and labor
-    Λ::SparseMatrixCSC{TF,Int64} # steady state transition matrix for the distribution of wealth
-end
-
-struct Derivatives{TF<:Float64}
-    ∂r_∂K::TF
-    ∂w_∂K::TF
-    ∂r_∂Z::TF
-    ∂w_∂Z::TF
-end
-
-struct Solution{TF<:Float64}
-    rfakeNews::Matrix{TF}
-    wfakeNews::Matrix{TF}
-    rjacobian::Matrix{TF}
-    wjacobian::Matrix{TF}
-    derivatives::Derivatives{TF}
-end
-
-
 
 """
     EGM(model::AiyagariModel,
@@ -162,51 +103,6 @@ function policyupdate(prices::Prices,
 end
 
 
-"""
-    invariant_dist(Π::AbstractMatrix{Float64};
-    ϵ::Float64 = 1e-6,
-    itermax::Int64 = 1000)
-
-    Calculates the invariant distribution of a markov chain,
-    given a transition matrix.
-    TODO: Need to consider inverse power method and 
-    Anderson acceleration to make more efficient.
-"""
-function invariant_dist(Π::AbstractMatrix{Float64};
-    method::Int64 = 1,
-    ε::Float64 = 1e-9,
-    itermax::Int64 = 1000)
-    
-    m = size(Π,1)
-    D = (1/m) .* ones(m)
-    
-    if method == 1 # iteration
-        crit = 1.0
-        iter = 0
-        while crit > ε && iter < itermax
-            newD = Π' * D
-            crit = norm(newD - D)
-            D = newD
-            iter += 1
-        end        
-        
-        if iter == itermax
-            println("Warning: invariant distribution did not converge.")
-        end
-        
-    elseif method == 2 # inverse power method
-        λ, D = IterativeSolvers.powm!(Π', D, tol= ε, maxiter = itermax)
-        
-    elseif method == 3 # Anderson mixing
-        func(x) = Π' * x
-        D = NLsolve.fixedpoint(func, D, ftol=ε, iterations=itermax).zero        
-    
-    else
-        error("method must be either 1, 2, or 3")
-    end
-
-    return D ./ sum(D)
-end
 
 
 """
