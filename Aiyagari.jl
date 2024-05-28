@@ -64,7 +64,7 @@ function setup_Aiyagari(params::Params)
     
     @unpack σ, ρ, n_a, n_e, gridx = params
     a_min, a_max = gridx
-    shockgrid, Π = normalized_shockprocess(σ, ρ, n_e)
+    Π, _, shockgrid = normalized_shockprocess(n_e, ρ, σ, method=1)
     a_values = range(a_min, stop=a_max, length=n_a)
     policygrid = collect(a_values)
     initialguess = zeros(length(policygrid), length(shockgrid))

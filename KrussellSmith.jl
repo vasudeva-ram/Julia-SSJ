@@ -273,7 +273,7 @@ function mainKS()
     rho = 0.966
     s = 0.5
     sig = s * sqrt(1 - rho^2)
-    params = Params(0.96, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300)
+    params = Params(0.98, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300)
     
     # Setting up the model
     BaseModel = setup_Aiyagari(params)

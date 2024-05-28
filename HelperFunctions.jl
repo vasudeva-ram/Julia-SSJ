@@ -12,9 +12,9 @@ import IterativeSolvers
     Returns a vector of states and a transition matrix.
     See Tauchen (Economic Letters, 1986) for details.
 """
-function tauchendisc(σ::Float64,
+function get_TauchenDiscretization(n::Int64,
     ρ::Float64,
-    n::Int64)
+    σ::Float64)
     
     σy = σ / sqrt(1 - ρ^2)
     w = (6*σy/(n-1))
@@ -33,7 +33,15 @@ function tauchendisc(σ::Float64,
         end
     end
     
-    return states, Π
+    # Obtain the stationary distribution
+    # Note: Π should not be transposed here; it gets transposed (correctly) within the invariant_dist function  
+    D = invariant_dist(Π) 
+
+    # normalize the distribution to have mean of 1
+    states = exp.(states)
+    z = states ./ sum(states .* D) 
+
+    return Π, D, z
 end
 
 
@@ -41,18 +49,24 @@ end
     normalized_shockprocess(σ::Float64, 
     ρ::Float64)
 
-    Wrapper for the tauchendisc function.
+    Wrapper for the discretizing function (Tauchen or Rouwenhorst).
     Returns a normalized distribution in levels when the shock process
     is specified as an AR(1) in logs.
 """
-function normalized_shockprocess(σ::Float64, 
+function normalized_shockprocess(n::Int64,
     ρ::Float64,
-    n::Int64)
+    σ::Float64; 
+    method::Int64 = 1)
     
-    logshockgrid, Π = tauchendisc(σ, ρ, n)
-    shockgrid = exp.(logshockgrid) # n_a x 1 vector
+    if method == 1
+        Π, D, z = get_RouwenhorstDiscretization(n, ρ, σ)
+    elseif method == 2
+        Π, D, z = get_TauchenDiscretization(n, ρ, σ)
+    else
+        error("Method choice must be between 1: Tauchen (1986) and 2: Rouwenhorst (1995)")
+    end
     
-    return shockgrid, Π
+    return Π, D, z
     
 end
 
