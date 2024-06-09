@@ -65,8 +65,8 @@ function setup_Aiyagari(params::Params)
     @unpack σ, ρ, n_a, n_e, gridx = params
     a_min, a_max = gridx
     Π, _, shockgrid = normalized_shockprocess(n_e, ρ, σ, method=1)
-    a_values = range(a_min, stop=a_max, length=n_a)
-    policygrid = collect(a_values)
+    #a_values = range(a_min, stop=a_max, length=n_a)
+    policygrid = make_DoubleExponentialGrid(a_min, a_max, n_a)
     initialguess = zeros(length(policygrid), length(shockgrid))
     policymat = repeat(policygrid, 1, length(shockgrid)) # making this n_a x n_e matrix
     shockmat = repeat(shockgrid, 1, length(policygrid))' # making this n_a x n_e matrix (note the transpose)

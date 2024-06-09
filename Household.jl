@@ -11,8 +11,8 @@
 """
 function EGM(model::AiyagariModel,
     prices::Prices; 
-    ϵ::Float64 = 1e-6, 
-    itermax::Int64 = 1000)
+    ϵ::Float64 = 1e-9, 
+    itermax::Int64 = 5000)
     
     @unpack params, policygrid, initialguess, shockgrid, Π, policymat, shockmat = model
 

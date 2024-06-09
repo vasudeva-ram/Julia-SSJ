@@ -1,8 +1,6 @@
 # Implementing the Krussell-Smith model as in Auclert et. al. (2021)
 include("SSJ.jl")
 
-
-
 function get_prices(aggs::Aggregates, 
     model::AiyagariModel)
 
@@ -207,6 +205,7 @@ function getJacobian(BaseModel::AiyagariModel,
     return fakeNews, Jacobian
 end
 
+
 function solveKS(BaseModel::AiyagariModel,
     steadystate::SteadyState)
    
@@ -238,19 +237,12 @@ function solveKS(BaseModel::AiyagariModel,
 end
 
 
-function generate_ar1(n::Int, 
-    ρ::Float64; 
-    z0::Float64 = 0.01)
-    
-    z = Vector{Float64}(undef, n)
-    z[1] = z0
-    for t in 2:n
-        z[t] = ρ * z[t-1]
-    end
+"""
+    generateIRFs(solution::Solution,
+    dZ::Vector{Float64})
 
-    return z
-end
-
+Uses the Jacobian to generate the impulse response functions of the model.
+"""
 function generateIRFs(solution::Solution,
     steadystate::SteadyState,
     dZ::Vector{Float64})

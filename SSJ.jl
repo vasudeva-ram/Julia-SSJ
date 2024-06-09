@@ -45,6 +45,7 @@ function get_yso(BaseModel::AiyagariModel,
     return yso
 end
 
+
 function get_Λso(BaseModel::AiyagariModel,
     yso::Vector{Matrix{Float64}})
 
@@ -165,17 +166,23 @@ function createJacobian(fakeNews::Matrix{Float64})
 end
 
 
+"""
+    mainSSJ()
+
+Main Function that generates the fake news matrix, the Jacobian, and the impulse response functions
+for a Krussell-Smith model using the Sequence-Space Jacobian method.
+"""
 function mainSSJ()
     
     # defining the parameters of the model
     rho = 0.966
     s = 0.5
     sig = s * sqrt(1 - rho^2)
-    params = Params(0.96, 1.0, sig, rho, 0.025, 0.11, 0.0001, 200, 7, 300)
+    params = Params(0.98, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300)
 
     # Setting up the model
     BaseModel::AiyagariModel = setup_Aiyagari(params)
-    steadystate::SteadyState = steady_state(BaseModel); # find the steady state
+    steadystate::SteadyState = solve_SteadyState(BaseModel); # find the steady state
 
     # Get the policies (yso) and associated transition matrices (Λso)
     yso_r = get_yso(BaseModel, steadystate, 'r')
@@ -198,6 +205,7 @@ function mainSSJ()
     # Create the Jacobian
     Jacobian = createJacobian(fakeNews)
 
+    # Plot the fake news matrix and the Jacobian
     p1 = plot(fakeNews[:, [1, 25, 50, 75, 100]], title = "Fake News Matrix", label = ["t = 1" "t = 25" "t = 50" "t = 75" "t = 100"])
     display(p1)
     p2 = plot(Jacobian[:, [1, 25, 50, 75, 100]], title = "Jacobian", label = ["t = 1" "t = 25" "t = 50" "t = 75" "t = 100"])
