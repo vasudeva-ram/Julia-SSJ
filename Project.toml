@@ -1,6 +1,6 @@
 name = "SSJ"
 uuid = "fcc489ce-70ac-4398-8478-c9d5a921cdd2"
-authors = ["Vasudeva Ramaswamy <ramaswamy@american.edu>", "Florian Oswald <florian.oswald@gmail.com>"]
+authors = ["Vasudeva Ramaswamy <ramaswamy@american.edu>"]
 version = "0.1.0"
 
 [deps]
