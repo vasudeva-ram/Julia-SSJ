@@ -1,5 +1,12 @@
 # Implementing the Krussell-Smith model as in Auclert et. al. (2021)
 
+"""
+    get_prices(aggs::Aggregates, 
+    model::AiyagariModel)
+
+Given aggregate capital and labor supply, and the model parameters,
+    returns the prices - `r` and `w` - of the model.
+"""
 function get_prices(aggs::Aggregates, 
     model::AiyagariModel)
 
@@ -176,6 +183,8 @@ function steadystateKS_r(BaseModel::AiyagariModel;
     return steadystate
     
 end
+
+
 
 function getJacobian(BaseModel::AiyagariModel,
     steadystate::SteadyState,

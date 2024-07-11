@@ -91,8 +91,18 @@ function policyupdate(prices::Prices,
 end
 
 
+"""
+    distribution_transition(savingspf::Matrix{Float64}, # savings policy function
+    policygrid::Vector{Float64}, # savings grid
+    Π::Matrix{Float64})
 
-
+Obtains the transition matrix for the household between period t and t+1 via
+    the Young (2010) method. In essence, this method uses the policy function
+    of the household to obtain transition probabilities between grid positions
+    using a "lottery" approach. This is then composed with the transition
+    probabilities of the exogenous employment process to obtain the full
+    transition matrix.
+"""
 function distribution_transition(savingspf::Matrix{Float64}, # savings policy function
     policygrid::Vector{Float64}, # savings grid
     Π::Matrix{Float64}) # transition matrix for the exogenous shock process (get from `normalized_shockprocess()` function)
