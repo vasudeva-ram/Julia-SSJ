@@ -21,171 +21,19 @@ function get_prices(aggs::Aggregates,
 end
 
 
-function steadystateKS_KBrent(BaseModel::AiyagariModel;
-    ϵ::Float64 = 1e-6,
-    itermax::Int64 = 1000,
-    printsol::Bool = false)
+"""
+    getJacobian(BaseModel::AiyagariModel,
+    steadystate::SteadyState,
+    𝔼::Vector{Vector{Float64}},
+    input::Char)
 
-    # Unpack parameters
-    @unpack params, policygrid, initialguess, shockgrid, Π = BaseModel
-    prices = Prices(0.0, 0.0)
-    policies = (saving = zeros(size(initialguess)), consumption = zeros(size(initialguess)))
-    D = zeros(size(initialguess))
-    agg_labor = aggregate_labor(Π, shockgrid)
-    aggregates = Aggregates(0.0, 0.0)
-    Λ = spzeros(prod(size(initialguess)))
-
-    # Start a solution loop
-    k_max = 100.0
-    k_min = 0.1
-
-    function get_optimum(ks)
-        # Get the implied aggregate labor supply and aggregate capital demand
-        aggregates = Aggregates(ks, agg_labor)
-        # Get the implied prices
-        prices = get_prices(aggregates, BaseModel)
-        # Solve the household's policies
-        policies = EGM(BaseModel, prices)
-        # Get the implied stationary distribution of wealth
-        Λ = distribution_transition(policies.saving, BaseModel.policygrid, BaseModel.Π)
-        D = invariant_dist(Λ')
-        # Get the implied aggregate capital supply
-        spolicy = vcat(policies.saving...) 
-        agg_kdmat = D' * spolicy
-        agg_kd = agg_kdmat[1,1]
-        return norm(agg_kd - ks)
-    end
-
-    sol = Optim.optimize(get_optimum, k_min, k_max, abs_tol=ϵ)
-
-    return sol    
-end
-
-
-function steadystateKS_K(BaseModel::AiyagariModel;
-    ϵ::Float64 = 1e-6,
-    itermax::Int64 = 1000,
-    printsol::Bool = false)
-
-    # Unpack parameters
-    @unpack params, policygrid, initialguess, shockgrid, Π = BaseModel
-    prices = Prices(0.0, 0.0)
-    policies = (saving = zeros(size(initialguess)), consumption = zeros(size(initialguess)))
-    D = zeros(size(initialguess))
-    agg_labor = aggregate_labor(Π, shockgrid)
-    aggregates = Aggregates(0.0, 0.0)
-    Λ = spzeros(prod(size(initialguess)))
-
-    # Start a solution loop
-    crit = 100.0
-    iter = 0
-    k_max = 100.0
-    k_min = 0.1
-
-    while (crit > ϵ) && (iter < itermax)
-        # Get the first guess of interest rate from range
-        ks = (k_max + k_min) / 2
-        # Get the implied aggregate labor supply and aggregate capital demand
-        aggregates = Aggregates(ks, agg_labor)
-        # Get the implied prices
-        prices = get_prices(aggregates, BaseModel)
-        # Solve the household's policies
-        policies = EGM(BaseModel, prices)
-        # Get the implied stationary distribution of wealth
-        Λ = distribution_transition(policies.saving, BaseModel.policygrid, BaseModel.Π)
-        D = invariant_dist(Λ')
-        # Get the implied aggregate capital supply
-        spolicy = vcat(policies.saving...) 
-        agg_kdmat = D' * spolicy
-        agg_kd = agg_kdmat[1,1]
-        # Check if the implied aggregate capital supply equals the aggregate capital demand
-        crit = abs(agg_kd - aggregates.agg_ks)
-        # Update the range of interest rate
-        if agg_kd > ks
-            k_min = ks
-        else
-            k_max = ks
-        end
-        iter += 1
-            
-    end
-    
-    if printsol
-        println("Iteration: $iter, \n
-            Interest rate: $(prices.r), \n
-            Aggregate capital: $(aggregates.agg_ks), \n
-            Aggregate labor: $(aggregates.agg_labor)")
-    end
-
-    steadystate = SteadyState(prices, policies, D, aggregates, Λ)
-    return steadystate
-    
-end
-
-
-
-function steadystateKS_r(BaseModel::AiyagariModel;
-    ϵ::Float64 = 1e-6,
-    itermax::Int64 = 1000,
-    printsol::Bool = false)
-
-    # Unpack parameters
-    @unpack params, policygrid, initialguess, shockgrid, Π = BaseModel
-    prices = Prices(0.0, 0.0)
-    policies = (saving = zeros(size(initialguess)), consumption = zeros(size(initialguess)))
-    D = zeros(size(initialguess))
-    agg_labor = aggregate_labor(Π, shockgrid)
-    aggregates = Aggregates(0.0, 0.0)
-    Λ = spzeros(prod(size(initialguess)))
-
-    # Start a solution loop
-    crit = 100.0
-    iter = 0
-    high_r = (1/params.β) -1
-    low_r = 0.0
-
-    while (crit > ϵ) && (iter < itermax)
-        # Get the first guess of interest rate from range
-        r = (high_r + low_r) / 2
-        # Get the implied aggregate labor supply and aggregate capital demand
-        aggregates = get_aggregates(r, agg_labor, BaseModel)
-        # Get the implied prices
-        prices = get_prices(r, aggregates, params)
-        # Solve the household's policies
-        policies = EGM(BaseModel, prices)
-        # Get the implied stationary distribution of wealth
-        Λ = distribution_transition(policies.saving, BaseModel.policygrid, BaseModel.Π)
-        D = invariant_dist(Λ')
-        # Get the implied aggregate capital supply
-        spolicy = vcat(policies.saving...) 
-        agg_ksmat = D' * spolicy
-        agg_ks = agg_ksmat[1,1]
-        # Check if the implied aggregate capital supply equals the aggregate capital demand
-        crit = abs(agg_ks - aggregates.agg_ks)
-        # Update the range of interest rate
-        if agg_ks > aggregates.agg_ks
-            high_r = r
-        else
-            low_r = r
-        end
-        iter += 1
-            
-    end
-    
-    if printsol
-        println("Iteration: $iter, \n
-            Interest rate: $(prices.r), \n
-            Aggregate capital: $(aggregates.agg_ks), \n
-            Aggregate labor: $(aggregates.agg_labor)")
-    end
-
-    steadystate = SteadyState(prices, policies, D, aggregates, Λ)
-    return steadystate
-    
-end
-
-
-
+Obtains the Jacobian and the FakeNews matrix of the Krussell Smith model.
+Corresponds to the procedure described in Section 3.2 of the Auclert et. al. (2021) paper.
+Note: The Jacobian here refers only to the matrix of first-order derivatives of 
+capital supply (Kˢ) w.r.t. the two inputs `r` and `w`. 
+The analytical derivatives of these inputs w.r.t. the aggregate capital supply (K) 
+and the shock (Z) are calculated in the `solveKS` function.
+"""
 function getJacobian(BaseModel::AiyagariModel,
     steadystate::SteadyState,
     𝔼::Vector{Vector{Float64}},
@@ -214,6 +62,14 @@ function getJacobian(BaseModel::AiyagariModel,
 end
 
 
+"""
+    solveKS(BaseModel::AiyagariModel,
+    steadystate::SteadyState)
+
+Solves the Krussell-Smith model to first order. 
+Note: The "solution" here refers to all the derivatives necessary 
+to compute the impulse response functions. 
+"""
 function solveKS(BaseModel::AiyagariModel,
     steadystate::SteadyState)
    
@@ -275,24 +131,22 @@ function mainKS()
     sig = s * sqrt(1 - rho^2)
     params = Params(0.98, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300)
     
-    # Setting up the model
-    BaseModel = setup_Aiyagari(params)
-    
-    # Solving for the steady state
-    ss = solve_SteadyState(BaseModel, guess=(0.01, 0.10))
-
-    # Solve the KS model
-    solution = solveKS(BaseModel, ss)
+    # Solving the model
+    BaseModel = setup_Aiyagari(params) # Setting up the model
+    ss = solve_SteadyState(BaseModel, guess=(0.01, 0.10)) # Solving for the steady state
+    solution = solveKS(BaseModel, ss) # Solve the KS model
 
     # Plot the fake news matrix and Jacobian
-    p1 = plot(solution.rfakeNews[:, [1, 25, 50, 75, 100]], title = "Fake News Matrix", label = ["t = 1" "t = 25" "t = 50" "t = 75" "t = 100"])
+    p1 = plot(solution.rfakeNews[:, [1, 25, 50, 75, 100]], 
+                title = "Fake News Matrix", 
+                label = ["t = 1" "t = 25" "t = 50" "t = 75" "t = 100"])
     display(p1)
-
-    p2 = plot(solution.rjacobian[:, [1, 25, 50, 75, 100]], title = "Jacobian", label = ["t = 1" "t = 25" "t = 50" "t = 75" "t = 100"])
+    p2 = plot(solution.rjacobian[:, [1, 25, 50, 75, 100]], 
+                title = "Jacobian", 
+                label = ["t = 1" "t = 25" "t = 50" "t = 75" "t = 100"])
     display(p2)
 
     # plot IRFs 
-    dZs = Matrix{Float64}(undef, 300, 4)
     irfPlot = plot(title = "Impulse Response Functions", xlabel = "Quarters", ylabel = "Percent Deviation from SS")
     for ρ in [0.3, 0.5, 0.7, 0.9]
         dZ = generate_ar1(BaseModel.params.T, ρ)
