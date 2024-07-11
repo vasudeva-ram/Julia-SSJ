@@ -1,15 +1,4 @@
-using Pkg
-Pkg.activate(".")
-Pkg.instantiate()
 
-using LinearAlgebra, Plots, Distributions, SparseArrays, 
-UnPack, BenchmarkTools, Profile, ProfileView, Roots
-
-import IterativeSolvers, Interpolations
-
-include("GeneralStructures.jl")
-include("HelperFunctions.jl")
-include("Household.jl")
 
 """
     aggregate_labor(Π::Matrix{Float64}, 

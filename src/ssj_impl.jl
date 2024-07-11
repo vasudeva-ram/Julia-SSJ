@@ -1,4 +1,3 @@
-include("Aiyagari.jl")
 
 function get_yso(BaseModel::AiyagariModel,
     steadystate::SteadyState,
