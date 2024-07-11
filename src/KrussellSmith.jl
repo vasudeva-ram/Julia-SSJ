@@ -1,5 +1,4 @@
 # Implementing the Krussell-Smith model as in Auclert et. al. (2021)
-include("SSJ.jl")
 
 function get_prices(aggs::Aggregates, 
     model::AiyagariModel)
