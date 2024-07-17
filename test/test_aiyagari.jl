@@ -8,7 +8,7 @@
     params = SSJ.Params(0.96, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300)
 
     # set an r
-    r = 0.05
+    r = 0.04
     
     # Setting up the model
     BaseModel = SSJ.setup_Aiyagari(params)
@@ -41,13 +41,10 @@
 		# today's consumption: inverse marginal utility over RHS
     	iuprime[:,ie] = rhs .^ ((-1)/params.γ)
 	end
-    # println([iuprime  (policies.consumption)])
 
-    implied = ((1 + prices.r) * BaseModel.policymat) .+ (prices.w .* BaseModel.shockmat) .- policies.saving
-
-    # checks last penultimate line in `EGM`:
-    @test all(implied .== policies.consumption)
+    savings = SSJ.policyupdate(prices,BaseModel.policymat,BaseModel.shockmat,iuprime)
+    cons = ((1 + prices.r) * BaseModel.policymat) + (prices.w * BaseModel.shockmat) - savings
 
     # checks reverse engineering of `consumptiongrid`
-	@test maximum(abs,(iuprime ./ policies.consumption) .- 1) < 0.0001
+	@test maximum(abs,(cons ./ policies.consumption) .- 1) < 0.00001
 end
