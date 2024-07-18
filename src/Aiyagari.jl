@@ -39,6 +39,40 @@ function get_AggsPrices(r::Float64,
     return Aggregates(agg_ks, agg_labor), Prices(r, w)
 end
 
+"""
+    get_aggregates(r::Float64,w::Float64,
+    agg_labor::Float64,Y::Float64,
+    Model::AiyagariModel)
+
+    Given the interest rate and the aggregate labor supply
+    (which is exogenously determined), returns an Aggregates 
+    type with the implied aggregate capital supply from the 
+    Firm sector.
+"""
+function get_AggsPrices(r,w,
+    agg_labor,Y,
+    Model::AiyagariModel)
+    
+    params = Model.params
+    agg_ks = (((r + params.δ)/params.α)^(1/(params.α - 1))) * agg_labor
+
+    Y
+
+    return Aggregates2(agg_ks, agg_labor,Y), Prices(r, w)
+end
+
+
+"""
+    firm(K, L, Z, alpha, delta)
+
+given K,L,Z and parameters, this returns (r,w,Y)
+"""
+function firm(K, L, Z, alpha, delta)
+    r = alpha * Z * (K / L) ^ (alpha-1) - delta
+    w = (1 - alpha) * Z * (K / L) ^ alpha
+    Y = Z * K ^ alpha * L ^ (1 - alpha)
+    return r, w, Y
+end
 
 """
     setup_Aiyagari(params::Params;
@@ -88,6 +122,88 @@ function SingleRun(r::Float64,
 end
 
 
+"""
+    SingleRunFirm(β,K,Z,
+    BaseModel::AiyagariModel)
+
+Given a guess for the interest rate, this function computes all the
+    policies of all the agents.
+    Note: This is not the *steady state* solution; just the solution of all 
+    agents given an interest rate.
+"""
+function SingleRunFirm(β,K,Z,BaseModel::AiyagariModel)
+    BaseModel.params.β = β  # current \beta guess
+    BaseModel.params.Z = Z  # current \beta guess
+    par = BaseModel.params 
+    L = aggregate_labor(BaseModel.Π, BaseModel.shockgrid)
+
+    r,w,Y = firm(K,L,Z,par.α, par.δ)
+    aggregates, prices = get_AggsPrices(r, w, L, Y, BaseModel)
+    policies = EGM(BaseModel, prices, β)
+    Λ = distribution_transition(policies.saving, BaseModel.policygrid, BaseModel.Π)
+    D = invariant_dist(Λ')
+
+    return SteadyState2(prices, policies, D, aggregates, Λ)
+end
+
+
+"""
+    steady_stateFirm(BaseModel::AiyagariModel;
+    ϵ::Float64 = 1e-6,
+    itermax::Int64 = 1000,
+    printsol::Bool = false)
+
+    This function computes the steady state of the Aiyagari model.
+    It chooses β while trying to hit a target on r
+"""
+function solve_SteadyState_r(rtarget::Float64, BaseModel::AiyagariModel)
+    
+    # need to hit target r
+
+    init_x = [0.98, 3.0, 0.85]  # β, K, Z
+
+    # does not work
+    # result = nlsolve((out,x) -> residual!(out,x[1],x[2],x[3],rtarget,1.0,BaseModel), init_x, autodiff = :forward)
+    # super slow
+    result = nlsolve((out,x) -> residual!(out,x[1],x[2],x[3],rtarget,1.0,BaseModel), init_x,
+    xtol = 1e-3, ftol = 1e-3)
+
+    # prob = SteadyStateProblem(residual, init_x, (rtarget = rtarget, ytarget = 1.0, BaseModel = BaseModel))
+    # return solve(prob, SSRootfind(Broyden()), )
+
+    # return result
+
+
+    @info "beta = $(result.zero[1])"
+    @info "K = $(result.zero[2])"
+    @info "Z = $(result.zero[3])"
+
+    solution = SingleRunFirm(result.zero..., BaseModel)
+    
+    return solution
+end
+
+
+# internal function to obtain residual
+function residual!(F,β_guess,K,Z,rtarget,ytarget, BaseModel)
+    ss = SingleRunFirm(β_guess, K, Z, BaseModel)
+    agg_ks = ss.aggregates.agg_ks
+    spolicy = vcat(ss.policies.saving...)
+    agg_kd = (ss.D' * spolicy)[1,1]
+    F[1] = agg_kd - agg_ks # capital_market 
+    F[2] = ss.prices.r - rtarget # r target
+    F[3] = ss.aggregates.Y - ytarget  # Y target
+end
+
+function residual(x,p,t)
+    ss = SingleRunFirm(x[1], x[2], x[3], p.BaseModel)
+    agg_ks = ss.aggregates.agg_ks
+    spolicy = vcat(ss.policies.saving...)
+    agg_kd = (ss.D' * spolicy)[1,1]
+    [agg_kd - agg_ks, # capital_market 
+     ss.prices.r - p.rtarget, # r target
+     ss.aggregates.Y - p.ytarget]  # Y target
+end
 
 """
     steady_state(BaseModel::AiyagariModel;
@@ -151,4 +267,41 @@ end
 
 
 
+function main_r(r::Float64)
+    
+    # defining the parameters of the model
+    rho = 0.966
+    s = 0.5
+    sig = s * sqrt(1 - rho^2)
+    params = Params(0.97, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 500, 7, 300, 0.8)
+    
+    # Setting up the model
+    BaseModel = setup_Aiyagari(params)
+    
+    # Solving for the steady state
+    sol = solve_SteadyState_r(r,BaseModel)
 
+    println("Steady state interest rate: ", sol.prices.r)
+    println("Steady state wage rate: ", sol.prices.w)
+    println("Steady state Z: ", BaseModel.params.Z)
+    println("Steady state β: ", BaseModel.params.β)
+    println("Steady state aggregate capital: ", sol.aggregates.agg_ks)
+    println("Steady state aggregate labor: ", sol.aggregates.agg_labor)
+    println("Steady state aggregate output: ", sol.aggregates.Y)
+
+    return sol
+end
+
+function main_single()
+    # defining the parameters of the model
+    rho = 0.966
+    s = 0.5
+    sig = s * sqrt(1 - rho^2)
+    params = Params(0.97, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300, 0.8)
+    
+    # Setting up the model
+    BaseModel = setup_Aiyagari(params)
+
+    (SingleRunFirm(params.β,3.0,0.8,BaseModel), BaseModel)
+
+end

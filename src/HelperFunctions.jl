@@ -160,7 +160,7 @@ function invariant_dist(Π::AbstractMatrix;
     method::Int64 = 1,
     ε::Float64 = 1e-9,
     itermax::Int64 = 50000,
-    initVector::Union{Nothing, Vector{Float64}}=nothing,
+    initVector=nothing,
     verbose::Bool = false
     )
 

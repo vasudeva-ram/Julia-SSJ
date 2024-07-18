@@ -11,7 +11,7 @@ multiple dispatch to write more efficient code.
 """
 Params struct: contains the parameters of the model.
 """
-struct Params{TF<:Float64, TI<:Int64}
+mutable struct Params{TF<:Float64, TI<:Int64}
     β::TF # discount factor
     γ::TF # coefficient of relative risk aversion
     σ::TF # standard deviation of the shock process
@@ -23,6 +23,7 @@ struct Params{TF<:Float64, TI<:Int64}
     n_a::TI # number of grid points for the savings grid
     n_e::TI # number of grid points for the shock grid
     T::TI # number of periods for the transition path
+    Z::TF # TFP
 end
 
 
@@ -30,9 +31,9 @@ end
 Prices struct: contains the two main prices of the model,
 the interest rate and the wage rate.
 """
-struct Prices{TF<:Float64}
-    r::TF
-    w::TF
+struct Prices
+    r
+    w
 end
 
 
@@ -43,6 +44,16 @@ supply in the economy.
 struct Aggregates{TF<:Float64}
     agg_ks::TF
     agg_labor::TF
+end
+
+"""
+Aggregates struct: contains the aggregate capital and labor
+supply, and output in the economy.
+"""
+struct Aggregates2
+    agg_ks
+    agg_labor
+    Y
 end
 
 
@@ -74,6 +85,14 @@ struct SteadyState{TF<:Float64}
     policies::NamedTuple{(:saving, :consumption), Tuple{Matrix{TF}, Matrix{TF}}} # savings and consumption policies
     D::Vector{TF} # steady state distribution of wealth
     aggregates::Aggregates # steady state aggregate capital and labor
+    Λ::SparseMatrixCSC{TF,Int64} # steady state transition matrix for the distribution of wealth
+end
+
+struct SteadyState2{TF<:Float64}
+    prices::Prices # steady state prices
+    policies::NamedTuple{(:saving, :consumption), Tuple{Matrix{TF}, Matrix{TF}}} # savings and consumption policies
+    D::Vector{TF} # steady state distribution of wealth
+    aggregates::Aggregates2 # steady state aggregate capital and labor
     Λ::SparseMatrixCSC{TF,Int64} # steady state transition matrix for the distribution of wealth
 end
 
