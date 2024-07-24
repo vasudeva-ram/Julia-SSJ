@@ -1,24 +1,18 @@
+
+# this is a rewrite based on https://github.com/vasudeva-ram/Julia-SSJ
+
 module SSJ
 
-greet() = print("Hello World!")
 
-using LinearAlgebra, Plots, Distributions, SparseArrays, UnPack, Roots
-using NLsolve
-using Infiltrator
-# using OptimizationPRIMA, Optimization
-# using NonlinearSolve
-# using SteadyStateDiffEq
+using QuantEcon: rouwenhorst, stationary_distributions
+using Parameters
+using Interpolations
 
-import IterativeSolvers, Interpolations
+include("Aiyagari2.jl")
+
+export Params
 
 
-include("GeneralStructures.jl")
-include("HelperFunctions.jl")
-include("Household.jl")
-include("Aiyagari.jl")
-include("KrussellSmith.jl")
-include("ssj_impl.jl")
 
-export mainKS, main, mainSSJ
 
 end # module SSJ
