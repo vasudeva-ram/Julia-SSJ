@@ -9,7 +9,7 @@ Params struct: contains the parameters of the model.
     γ = 1.0 # coefficient of relative risk aversion
     s = 0.5 # parameter in getting shock process std dev
     ρ = 0.966 # persistence of the shock process
-    σ = s + sqrt(1 - ρ^2)
+    σ = s * sqrt(1 - ρ^2)
     δ = 0.025# depreciation rate
     α = 0.11 # share of capital in production
     dx = 0.0001 # size of infinitesimal shock for numerical differentiation
@@ -145,7 +145,6 @@ function EGM!(a::Aiyagari,prices::Prices)
     a.mplus[:] = [(1 + prices.r) * a.agrid[ia] + prices.w * a.shockgrid[ie] for ia in 1:p.n_a, ie in 1:p.n_e]
 
     while diff > p.tol
-    # while count < 2
         EGMstep!(a,prices)  
         diff = max(maximum(abs,a.m[2:end, :] - a.m0),
                    maximum(abs,a.c_m[2:end, :] - a.c0_m))
