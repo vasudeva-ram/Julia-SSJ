@@ -4,13 +4,17 @@
 module SSJ
 
 
-using QuantEcon: rouwenhorst, stationary_distributions
 using Parameters
 using Interpolations
 using LinearAlgebra
 using Plots
+using SparseArrays
+using Roots
+using NLsolve
 
-include("Aiyagari2.jl")
+
+include("GeneralStructures.jl")
+include("Aiyagari.jl")
 
 export Params
 

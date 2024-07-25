@@ -112,3 +112,79 @@ end
 	@test maximum(abs,((cimplied - a.c0_m) ./ a.c0_m)) < 1e-8
 	@test maximum(abs,((newcons - a.consumption) ./ a.consumption)) < 1e-8
 end
+
+
+@testitem "SingleRun r" begin
+    r = 0.02
+    p = Params()
+    a = SSJ.Aiyagari(p)
+    o = SSJ.SingleRun(r,a)
+    @test isa(o, SSJ.SteadyState)
+    @test o.prices.r == r
+    @test sum(o.D) ≈ 1
+    @test all(sum(o.Λ, dims = 1) .≈ 1)
+end
+
+@testitem "SingleRun β,K,Z" begin
+    Z = 0.86
+    β = 0.95
+    K = 3.1
+    p = Params()
+    a = SSJ.Aiyagari(p)
+
+    o = SSJ.SingleRun(β,K,Z,a)
+    @test isa(o, SSJ.SteadyState)
+    @test o.aggregates.K == K
+    @test sum(o.D) ≈ 1
+    @test all(sum(o.Λ, dims = 1) .≈ 1)
+    @test a.params.β == β
+    @test a.params.Z == Z
+end
+
+@testitem "SteadyState r" begin
+    p = Params()
+    a = SSJ.Aiyagari(p)
+    o = SSJ.solve_SteadyState(a)
+    @test isa(o, SSJ.SteadyState)
+    @test sum(o.D) ≈ 1
+    @test all(sum(o.Λ, dims = 1) .≈ 1)
+end
+
+@testitem "SteadyState β" begin
+    p = Params()
+    a = SSJ.Aiyagari(p)
+    o = SSJ.solve_SteadyState(a)
+    @test isa(o, SSJ.SteadyState)
+    @test sum(o.D) ≈ 1
+    @test all(sum(o.Λ, dims = 1) .≈ 1)
+end
+
+@testitem "solve SS r" begin
+    p = Params()
+    a = SSJ.Aiyagari(p)
+    s = SSJ.solve_SteadyState(a)
+    @test isa(s, SSJ.SteadyState)
+    @test sum(s.D) ≈ 1
+    @test all(sum(s.Λ, dims = 1) .≈ 1)
+    @test SSJ.get_residual(s.prices.r,a) ≈ 0.0 atol = 1e-6 
+end
+
+
+@testitem "solve SS β" begin
+    p = Params()
+    a = SSJ.Aiyagari(p)
+    r = 0.01
+    y = 1.0
+    s = SSJ.solve_SteadyState_r(r,y,a)
+    @test isa(s, SSJ.SteadyState)
+    @test sum(s.D) ≈ 1
+    @test all(sum(s.Λ, dims = 1) .≈ 1)
+    @test s.prices.r ≈ r
+    @test s.aggregates.Y ≈ y
+
+    F = zeros(3)
+    SSJ.residual!(F,a.params.β,s.aggregates.K,a.params.Z,r,y,a)
+
+    @test SSJ.norm(F, Inf) < 1e-8
+
+end

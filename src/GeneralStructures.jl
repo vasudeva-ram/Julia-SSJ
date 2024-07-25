@@ -8,69 +8,16 @@ multiple dispatch to write more efficient code.
 """
 
 
-"""
-Params struct: contains the parameters of the model.
-"""
-mutable struct Params{TF<:Float64, TI<:Int64}
-    β::TF # discount factor
-    γ::TF # coefficient of relative risk aversion
-    σ::TF # standard deviation of the shock process
-    ρ::TF # persistence of the shock process
-    δ::TF # depreciation rate
-    α::TF # share of capital in production
-    dx::TF # size of infinitesimal shock for numerical differentiation
-    gridx::Vector{TF} # [a_min, a_max] bounds for the savings grid
-    n_a::TI # number of grid points for the savings grid
-    n_e::TI # number of grid points for the shock grid
-    T::TI # number of periods for the transition path
-    Z::TF # TFP
+struct Aggregates
+    K
+    L
+    Y
 end
 
-
-"""
-Prices struct: contains the two main prices of the model,
-the interest rate and the wage rate.
-"""
 struct Prices
     r
     w
 end
-
-
-"""
-Aggregates struct: contains the aggregate capital and labor
-supply in the economy.
-"""
-struct Aggregates{TF<:Float64}
-    agg_ks::TF
-    agg_labor::TF
-end
-
-"""
-Aggregates struct: contains the aggregate capital and labor
-supply, and output in the economy.
-"""
-struct Aggregates2
-    agg_ks
-    agg_labor
-    Y
-end
-
-
-"""
-AiyagariModel struct: contains all the objects needed to solve the
-Aiyagari (1994) model.
-"""
-struct AiyagariModel{TF<:Float64}
-    params::Params # parameters of the model
-    policygrid::Vector{TF} # grid of policy choices
-    policymat::Matrix{TF} # grid of policy choices, repeated for each shock
-    initialguess::Matrix{TF} # initial guess for the policy function
-    shockgrid::Vector{TF} # grid of shocks, obtained from `normalized_shockprocess()` function
-    shockmat::AbstractArray{TF, 2} # grid of shocks, repeated for each policy choice
-    Π::Matrix{TF} # transition matrix for the exogenous shock process, obtained from `normalized_shockprocess()` function
-end
-
 
 """
 SteadyState struct: In our model, we define a steady state as the
@@ -85,14 +32,6 @@ struct SteadyState{TF<:Float64}
     policies::NamedTuple{(:saving, :consumption), Tuple{Matrix{TF}, Matrix{TF}}} # savings and consumption policies
     D::Vector{TF} # steady state distribution of wealth
     aggregates::Aggregates # steady state aggregate capital and labor
-    Λ::SparseMatrixCSC{TF,Int64} # steady state transition matrix for the distribution of wealth
-end
-
-struct SteadyState2{TF<:Float64}
-    prices::Prices # steady state prices
-    policies::NamedTuple{(:saving, :consumption), Tuple{Matrix{TF}, Matrix{TF}}} # savings and consumption policies
-    D::Vector{TF} # steady state distribution of wealth
-    aggregates::Aggregates2 # steady state aggregate capital and labor
     Λ::SparseMatrixCSC{TF,Int64} # steady state transition matrix for the distribution of wealth
 end
 
