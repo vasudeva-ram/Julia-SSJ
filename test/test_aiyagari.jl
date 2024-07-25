@@ -51,57 +51,64 @@ end
     aggs,prices = SSJ.firm(0.05,m)
     SSJ.EGM!(m,prices)
 
-    @test all(m.consumption .== (m.agrid .+ m.savings))
+    @test all(m.consumption .> 0)
+    @test all(m.c0_m .> 0)
+    @test all(m.c_m[1,:] .== 0)
 end
 
 
 
-# @testitem "Euler Error" begin
+@testitem "Euler Equation Error" begin
+    p = Params()
+    a = SSJ.Aiyagari(p)
+    aggs,prices = SSJ.firm(0.05,a)
+    SSJ.EGM!(a,prices)
 
-#     # defining the parameters of the model
-#     rho = 0.966
-#     s = 0.5
-#     sig = s * sqrt(1 - rho^2)
-#     params = SSJ.Params(0.96, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300)
+    # first sanity check on solution
+    @test all( (a.m0 - a.c0_m) .≈ a.agrid )
 
-#     # set an r
-#     r = 0.04
+    # now test that `policies` are consistent
+
+	μ = zeros(p.n_a)  # vector of marginal utilities
+	cimplied = zeros(p.n_a,p.n_e)  # matrix of inverse marginal utilities
+
+    # at each grid point compute 2 consumption values: one from your solution (c) and one implied. 
+    # cimp = g ^ (-1/p.γ)
+    # g is accurately computed rhs of euler equation, using the c function
+	mnext = zeros(p.n_a)
+
+	for ie in 1:p.n_e
+		fill!(μ , 0.0)
+		for je in 1:p.n_e
+			pr = a.Π[ie,je]  # transprob
+
+			# get next period consumption if state is je
+            # cprime = (1+r) policygrid + w * shock[je] - policy[je]
+            # (p.n_a by 1)
+            mnext = ((1 + prices.r) * a.agrid) .+ (prices.w .* a.shockgrid[je])
+            cint = SSJ.linear_interpolation(a.m[:,je], a.c_m[:,je], extrapolation_bc = SSJ.Line())
+            cnext = cint(mnext)
+
+			# Expected marginal utility at each state of tomorrow's income shock
+    		global μ += pr * (cnext .^ ((-1) * p.γ))
+		end
+	   # RHS of euler equation
+    	rhs = p.β * (1 + prices.r) * μ
+		# today's consumption: inverse marginal utility over RHS
+    	cimplied[:,ie] = rhs .^ ((-1)/p.γ)
+	end
+    endogrid = a.agrid .+ cimplied
+    endogrid = vcat(reshape(zeros(p.n_e),1,p.n_e) , endogrid)
+    endoc = vcat(reshape(zeros(p.n_e),1,p.n_e) , cimplied)
+
+    # consumption on asset grid
+    newcons = zeros(p.n_a, p.n_e)
+
+    for ie in 1:p.n_e
+        cint = SSJ.linear_interpolation(endogrid[:,ie], endoc[:,ie], extrapolation_bc = SSJ.Line())
+        newcons[:,ie] = cint(a.agrid .+ prices.w * a.shockgrid[ie])  # a + we = m
+    end
     
-#     # Setting up the model
-#     BaseModel = SSJ.setup_Aiyagari(params)
-
-#     agg_labor = SSJ.aggregate_labor(BaseModel.Π, BaseModel.shockgrid)
-#     aggregates, prices = SSJ.get_AggsPrices(r, agg_labor, BaseModel)
-#     policies = SSJ.EGM(BaseModel, prices)
-
-#     # now test that `policies` are consistent
-
-# 	μ = zeros(params.n_a)  # vector of marginal utilities
-# 	iuprime = zeros(params.n_a,params.n_e)  # matrix of inverse marginal utilities
-	
-#     # basically does `consumptiongrid`
-# 	for ie in 1:params.n_e
-# 		fill!(μ , 0.0)
-# 		for je in 1:params.n_e
-# 			pr = BaseModel.Π[ie,je]  # transprob
-
-# 			# get next period consumption if state is je
-#             # cprime = (1+r) policygrid + w * shock[je] - policy[je]
-#             # (params.n_a by 1)
-#             cprimevec = ((1 + prices.r) * BaseModel.policygrid) .+ (prices.w .* BaseModel.shockgrid[je]) .- policies.saving[:,je]
-
-# 			# Expected marginal utility at each state of tomorrow's income shock
-#     		global μ += pr * (cprimevec .^ ((-1) * params.γ))
-# 		end
-# 	   # RHS of euler equation
-#     	rhs = params.β * (1 + prices.r) * μ
-# 		# today's consumption: inverse marginal utility over RHS
-#     	iuprime[:,ie] = rhs .^ ((-1)/params.γ)
-# 	end
-
-#     savings = SSJ.policyupdate(prices,BaseModel.policymat,BaseModel.shockmat,iuprime)
-#     cons = ((1 + prices.r) * BaseModel.policymat) + (prices.w * BaseModel.shockmat) - savings
-
-#     # checks reverse engineering of `consumptiongrid`
-# 	@test maximum(abs,(cons ./ policies.consumption) .- 1) < 0.00001
-# end
+	@test maximum(abs,((cimplied - a.c0_m) ./ a.c0_m)) < 1e-8
+	@test maximum(abs,((newcons - a.consumption) ./ a.consumption)) < 1e-8
+end

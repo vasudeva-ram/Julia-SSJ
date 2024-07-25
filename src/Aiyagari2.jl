@@ -7,13 +7,13 @@ Params struct: contains the parameters of the model.
 @with_kw mutable struct Params @deftype Float64
     β = 0.968 # discount factor
     γ = 1.0 # coefficient of relative risk aversion
-    s = 0.5 # parameter in getting shock process std dev
     ρ = 0.966 # persistence of the shock process
-    σ = s * sqrt(1 - ρ^2)
+    σ = 0.5 # shock process std dev
     δ = 0.025# depreciation rate
     α = 0.11 # share of capital in production
     dx = 0.0001 # size of infinitesimal shock for numerical differentiation
-    gridx::Vector{Float64} = [0.0, 200.0] # [a_min, a_max] bounds for the savings grid
+    mina = 0.0 # lower bounds for the savings grid
+    maxa = 200.0 # upper bounds for the savings grid
     n_a::Int = 200 # number of grid points for the savings grid
     n_e::Int = 7 # number of grid points for the shock grid
     T::Int = 300 # number of periods for the transition path
@@ -50,24 +50,154 @@ struct Aiyagari
 
     function Aiyagari(p)
         # income shock
-        mc = rouwenhorst(p.n_e,p.ρ,p.σ,0.0)
-        Π = mc.p
-        Π_stationary = stationary_distributions(mc)[1]
-        shockgrid = exp.(mc.state_values) / sum(Π_stationary .* exp.(mc.state_values))
+        mc = get_RouwenhorstDiscretization(p.n_e,p.ρ,p.σ)
+        Π = mc[1]
+        Π_stationary = mc[2]
+        shockgrid = mc[3]
 
         # asset grids
-        agrid = collect(exp.(p.curvature_a * (range(p.gridx[1], log(p.gridx[2])/p.curvature_a, length = p.n_a))) .- 1)  # end of period fixed grid
+        # julia 1.11 will have the logrange function for this purposeo
+        agrid_ = agrid(p.maxa, p.mina, p.n_a)
+        # agrid = collect(exp.(p.curvature_a * (range(p.gridx[1], log(p.gridx[2])/p.curvature_a, length = p.n_a))) .- 1)  # end of period fixed grid
         m = zeros(p.n_a + 1, p.n_e)
 
         # initialize endogenous grid to something similar to end of asset grid
         # making sure the first row is all zeros!
-        m[2:end, :] = reshape(repeat(agrid .+ 0.001, outer = p.n_e), p.n_a, p.n_e)
+        m[2:end, :] = reshape(repeat(agrid_ .+ 0.001, outer = p.n_e), p.n_a, p.n_e)
         c_m = deepcopy(m)
 
         @assert m[1,:][:] == zeros(p.n_e)
         
-        return new(p,Π,Π_stationary,shockgrid,agrid,m,zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),c_m,zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),zeros(p.n_a))
+        return new(p,Π,Π_stationary,shockgrid,agrid_,m,zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),c_m,zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),zeros(p.n_a))
     end
+end
+
+"""
+agrid function copied from SSJ paper
+"""
+function agrid(amax,amin,n)
+    pivot = abs(amin) + 0.25
+    grid = 10 .^ (range(log(10, amin + pivot), log(10, amax + pivot), length=n)) .- pivot
+    grid[1] = amin
+    grid
+end
+
+"""
+    get_RouwenhorstDiscretization(n::Int64, # dimension of state-space
+    ρ::Float64, # persistence of AR(1) process
+    σ::Float64)
+
+Discretizes an AR(1) process using the Rouwenhorst method.
+See Kopecky and Suen (2009) for details: http://www.karenkopecky.net/Rouwenhorst_WP.pdf
+Better than Tauchen (1986) method especially for highly persistent processes.
+
+This implementation is identical to the SSJ toolbox, so we use this.
+"""
+function get_RouwenhorstDiscretization(n::Int64, # dimension of state-space
+    ρ::Float64, # persistence of AR(1) process
+    σ::Float64) # standard deviation of AR(1) process
+
+    # Construct the transition matrix
+    p = (1 + ρ)/2
+    
+    Π = [p 1-p; 1-p p]
+    
+    for i = 3:n
+        Π_old = Π
+        Π = zeros(i, i)
+        Π[1:i-1, 1:i-1] += p * Π_old
+        Π[1:i-1, 2:end] += (1-p) * Π_old
+        Π[2:end, 1:i-1] += (1-p) * Π_old
+        Π[2:end, 2:end] += p * Π_old
+        Π[2:i-1, 1:end] /= 2
+    end
+
+    # Obtain the stationary distribution
+    #TODO: should Π be transposed here? What does Rouwenhorst return? 
+    #SOLVED: No, Π should not be transposed here; it gets transposed (correctly) within the invariant_dist function  
+    D = invariant_dist(Π) 
+
+    # Construct the state-space
+    α = 2 * (σ/sqrt(n-1))
+    z = exp.(α * collect(0:n-1))
+    z = z ./ sum(z .* D) # normalize the distribution to have mean of 1
+    
+    #TODO: Based on this construction Zᵢⱼ has a mean of 1. But HHᵢ's wage income equals Zᵢⱼᵥ * Wⱼ. Should Zᵢⱼᵥ
+    # have a mean of 1 instead? #UPDATE: for IMPALight, it is sufficient for Zᵢⱼ to have a mean of 1.
+
+    return Π, D, z
+
+end
+
+
+"""
+    invariant_dist(Π::AbstractMatrix;
+    method::Int64 = 1,
+    ε::Float64 = 1e-9,
+    itermax::Int64 = 50000,
+    initVector::Union{Nothing, Vector{Float64}}=nothing,
+    verbose::Bool = false
+    )
+
+Calculates the invariant distribution of a Markov chain with transition matrix Π.
+"""
+function invariant_dist(Π::AbstractMatrix;
+    method::Int64 = 1,
+    ε::Float64 = 1e-9,
+    itermax::Int64 = 50000,
+    initVector=nothing,
+    verbose::Bool = false
+    )
+
+    # Function to generate an initial vector if there isn't one already
+    function generate_initVector(Π::AbstractMatrix)
+        m = size(Π,1)
+        D = (1/m) .* ones(m)
+        return D
+    end
+
+    ΠT = Π' # transpose to avoid creating an adjoint at each step
+
+    # https://discourse.julialang.org/t/stationary-distribution-with-sparse-transition-matrix/40301/8
+    if method == 1 # solve the system of equations
+        D = [1; (I - ΠT[2:end, 2:end]) \ Vector(ΠT[2:end,1])]
+    
+    elseif method == 2 # iteration
+        crit = 1.0
+        iter = 0
+        D = isnothing(initVector) ? generate_initVector(Π) : initVector
+        while crit > ε && iter < itermax
+            newD = ΠT * D 
+            crit = norm(newD - D)
+            D = newD
+            iter += 1
+        end        
+        
+        if verbose
+            println("Converged in $iter iterations.")
+        end
+
+        if iter == itermax
+            println("Warning: invariant distribution did not converge.")
+        end
+        
+    elseif method == 3 # inverse power method
+        λ, D = IterativeSolvers.powm!(ΠT, D, tol= ε, maxiter = itermax, verbose=verbose) # Given that the approximate eigenvalue is not really necssary, could we just use something like D = IterativeSolvers.powm!(Π', D, tol = ε, maxiter = itermax)[2]?
+        
+    elseif method == 4 # Anderson mixing
+        D = isnothing(initVector) ? generate_initVector(Π) : initVector
+        func(x) = ΠT * x
+        D = NLsolve.fixedpoint(func, D, ftol=ε, iterations=itermax).zero        
+    
+    else
+        error("Method choice must be between 
+        1: Sparse-Direct Linear Solution (default), 
+        2: Iteration, 
+        3: Inverse Power method, 
+        4: Fixed-point with Anderson Mixing")
+    end
+
+    return D ./ sum(D) # return normalized to sum to 1.0
 end
 
 struct Aggregates
@@ -148,7 +278,6 @@ function EGM!(a::Aiyagari,prices::Prices)
         EGMstep!(a,prices)  
         diff = max(maximum(abs,a.m[2:end, :] - a.m0),
                    maximum(abs,a.c_m[2:end, :] - a.c0_m))
-                   println(diff)
         # update objects with new values
         # notice that we keep the first row always equal to zero to represent the 
         # borrowing constraint.
@@ -157,11 +286,13 @@ function EGM!(a::Aiyagari,prices::Prices)
 		count += 1
     end
 
-    # interpolate cons and savings onto end of period asset grid.
+    # interpolate cons onto end of period asset grid.
     for ie in 1:p.n_e
         cint = linear_interpolation(a.m[:,ie], a.c_m[:,ie], extrapolation_bc = Line())
-        a.consumption[:,ie] = cint(a.agrid)
+        a.consumption[:,ie] = cint(a.agrid .+ prices.w * a.shockgrid[ie])  # a + we = m
     end
+
+    # on agrid
     a.savings[:] = [ia + prices.w * iy for ia in a.agrid, iy in a.shockgrid] .- a.consumption
 end
 
@@ -169,8 +300,8 @@ end
 function main()
     p = Params()
     a = Aiyagari(p)
-    aggs,prices = firm(0.05,a)
+    aggs,prices = firm(0.01,a)
     EGM!(a,prices)
-    a
+    plot(a.agrid, a.consumption)
 end
 
