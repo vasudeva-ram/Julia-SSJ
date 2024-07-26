@@ -33,21 +33,18 @@ struct Aiyagari
     Π::Matrix{Float64}   # icnome shock trans matrix
     Π_stationary::Vector{Float64}   # stationary distribution of Π
     shockgrid::Vector{Float64} # grid of shocks
+    shockmat::Matrix{Float64} # grid of shocks
 
     agrid::Vector{Float64} # end of period fixed asset grid
+    amat::Matrix{Float64} # end of period fixed asset grid
 
-    # EGM related grids defined on cash on hand m = a + y
-    m::Matrix{Float64} # endogenous grid for cash on hand on: n_a + 1 by n_e
-    m0::Matrix{Float64} # iteration object n_a by n_e
-    mplus::Matrix{Float64} # next period cash on hand
-    c_m::Matrix{Float64} # optimal consumption on m: n_a + 1 by n_e
-    c0_m::Matrix{Float64} # ieration helper on m: n_a by n_e
-    cplus::Matrix{Float64} # optimal consumption on m: n_a by n_e
-    # c0_m::Matrix{Float64} # optimal consumption on m: n_a by n_e
-
-    consumption::Matrix{Float64} # optimal consumption on a : na by ne
-    savings::Matrix{Float64} # optimal consumption on a : na by ne
-    Eμ::Vector{Float64} # Expected marginal utility of consumption given income shock
+    # EGM related grids
+    s::Matrix{Float64} # endogenous savings grid (n_a,n_e)
+    s1::Matrix{Float64} # endogenous savings grid (n_a,n_e) iteration object
+    cplus::Matrix{Float64} # helper matrix: n_a by n_e
+    cmat::Matrix{Float64} # helper matrix: n_a by n_e
+    Eμ::Matrix{Float64} # helper object Expected marginal utility of consumption given income shock
+    rhs::Matrix{Float64} # helper object rhs of EE
 
     function Aiyagari(p)
         # income shock
@@ -55,19 +52,23 @@ struct Aiyagari
         Π = mc[1]
         Π_stationary = mc[2]
         shockgrid = mc[3]
+        shockmat = repeat(shockgrid',p.n_a, 1 )
 
         # asset grids
         agrid_ = agrid(p.maxa, p.mina, p.n_a)
-        m = zeros(p.n_a + 1, p.n_e)
+        amat = repeat(agrid_, 1, p.n_e)
 
         # initialize endogenous grid to something similar to end of asset grid
         # making sure the first row is all zeros!
-        m[2:end, :] = reshape(repeat(agrid_ .+ 0.001, outer = p.n_e), p.n_a, p.n_e)
-        c_m = deepcopy(m)
-
-        @assert m[1,:][:] == zeros(p.n_e)
+        s = zeros(p.n_a, p.n_e)
+        s1 = similar(s)
+        cplus = similar(s)
+        cmat = similar(s)
+        Eμ = zeros(p.n_a,p.n_e)
+        rhs = zeros(p.n_a,p.n_e)
         
-        return new(p,Π,Π_stationary,shockgrid,agrid_,m,zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),c_m,zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),zeros(p.n_a, p.n_e),zeros(p.n_a))
+        return new(p,Π,Π_stationary,shockgrid,shockmat,
+                   agrid_,amat,s,s1,cplus,cmat,Eμ,rhs)
     end
 end
 
@@ -227,68 +228,144 @@ end
 # =============================
 
 """
-Solves the household problem via EGM
+Solves the household problem via EGM and returns a named tuple with policies
 """
-function EGM!(a::Aiyagari,prices::Prices)
+function EGM(a::Aiyagari,prices::Prices)
     p = a.params
     diff = 1e12
 	count = 0
 
-    # pre-compute tomorrow's cash on hand, which stays constant throughout iteration below
-    a.mplus[:] = [(1 + prices.r) * a.agrid[ia] + prices.w * a.shockgrid[ie] for ia in 1:p.n_a, ie in 1:p.n_e]
-
     while diff > p.tol
-        EGMstep!(a,prices)  
-        diff = max(maximum(abs,a.m[2:end, :] - a.m0),
-                   maximum(abs,a.c_m[2:end, :] - a.c0_m))
+        EGMstep!(a.s,a.s1,a,prices)  
+        diff = maximum(abs,a.s - a.s1)
         # update objects with new values
         # notice that we keep the first row always equal to zero to represent the 
         # borrowing constraint.
-        a.m[2:end, :]   = a.m0
-        a.c_m[2:end, :] = a.c0_m
+        a.s[:] = a.s1
 		count += 1
     end
 
-    # interpolate cons onto end of period asset grid.
-    for ie in 1:p.n_e
-        cint = linear_interpolation(a.m[:,ie], a.c_m[:,ie], extrapolation_bc = Line())
-        a.consumption[:,ie] = cint(a.agrid .+ prices.w * a.shockgrid[ie])  # a + we = m
-    end
+    cons = ((1 + prices.r) * a.amat) + (prices.w * a.shockmat) - a.s
 
-    # on agrid
-    a.savings[:] = [ia + prices.w * iy for ia in a.agrid, iy in a.shockgrid] .- a.consumption
+    return (saving = a.s, consumption = cons)
+
 end
 
 
-"Single Step in EGM algorithm - one policy function update"
-function EGMstep!(a::Aiyagari,prices::Prices)
+"""
+    Single Step in EGM algorithm - one policy function update
+
+    `s` is current savings policy, `sprime` is next guess.
+    
+"""
+function EGMstep!(s::Matrix,s1::Matrix,a::Aiyagari,prices::Prices)
     p = a.params
 
-    # get next period's consumption policy
-    # this requires interpolation of consumption function on next period's
-    # cash on hand grid:
-    for ie in 1:p.n_e
-        # TODO this can be made much faster by exploiting monotonicity in m and c
-        itp = linear_interpolation(a.m[:, ie], a.c_m[:,ie], extrapolation_bc = Line())
-        a.cplus[:,ie] = itp(a.mplus[:,ie])  # cplus is a,e
-    end
+    # next period consumption on asset grid a.agrid
+    a.cplus[:] = ((1 + prices.r) .* a.amat) + (prices.w .* a.shockmat) - s
 
     # construct expect marginal utility
-    Eμ = (a.cplus .^ ((-1) * p.γ))  * a.Π'
+    a.Eμ[:] = (a.cplus .^ ((-1) * p.γ))  * a.Π'
 
     # RHS of the euler equation
-    rhs = p.β * (1 + prices.r) * Eμ
+    a.rhs[:] = p.β * (1 + prices.r) * a.Eμ
 
     # inverse of LHS of EE is current consumption
-    a.c0_m[:] = rhs .^ ((-1) / p.γ)
+    a.cmat[:] = a.rhs .^ ((-1) / p.γ)
 
-    # current consumption plus end of period asset grid is endogenous grid.
-    a.m0[:]   = repeat(a.agrid,1,p.n_e) + a.c0_m
+    # current cmat implies a certain asset grid beginning of period t+1
+    impliedgrid = (1 / (1 + prices.r)) * (a.cmat - (prices.w .* a.shockmat) + a.amat)
+
+    for i in axes(impliedgrid, 2)
+        linpolate = Interpolations.linear_interpolation(impliedgrid[:,i], a.amat[:,i], extrapolation_bc = Interpolations.Flat())
+        s1[:,i] = linpolate(a.amat[:,i])
+    end
+
+    return nothing
    
 end
 
 
+# function EGM(model::AiyagariModel,
+#     prices::Prices; 
+#     ϵ::Float64 = 1e-9, 
+#     itermax::Int64 = 5000)
+    
+#     @unpack params, policygrid, initialguess, shockgrid, Π, policymat, shockmat = model
 
+#     crit = 100.0
+#     iter = 0
+#     currentguess::Matrix{Float64} = initialguess # n_a x n_e matrix
+#     cmat = Matrix{Float64}(undef, size(currentguess)) # initialize cmat
+
+#     #TODO: implement Brent's method here
+#     while (crit > ϵ) && (iter < itermax)
+#         cmat = consumptiongrid(prices, policymat, shockmat, currentguess, Π, params)
+#         newguess = policyupdate(prices, policymat, shockmat, cmat)
+#         crit = norm(newguess - currentguess)
+#         currentguess = newguess
+#         iter += 1
+#     end
+    
+#     cons = ((1 + prices.r) * policymat) + (prices.w * shockmat) - currentguess
+    
+#     return (saving = currentguess, consumption = cons)
+
+# end
+
+
+# """
+#     consumptiongrid(prices::Prices, 
+#     policymat::Matrix{Float64}, 
+#     shockmat::AbstractArray{Float64}, 
+#     currentguess::Matrix{Float64}, 
+#     Π::Matrix{Float64}, 
+#     params::Params)
+
+#     This function computes the implied consumption grid for one iteration of
+#     the EGM loop.
+# """
+# function consumptiongrid(prices::Prices, 
+#     policymat::Matrix{Float64}, 
+#     shockmat::AbstractArray{Float64}, 
+#     currentguess::Matrix{Float64}, 
+#     Π::Matrix{Float64}, 
+#     params::Params)
+    
+#     cprimemat = ((1 + prices.r) .* policymat) + (prices.w .* shockmat) - currentguess
+#     exponent = -1 * params.γ
+#     eulerlhs = params.β * (1 + prices.r) * ((cprimemat .^ exponent) * Π')
+#     cmat = eulerlhs .^ (1 / exponent)
+    
+#     return cmat
+    
+# end
+
+
+# """
+#     policyupdate(prices::Prices, 
+#     policymat::Matrix{Float64}, 
+#     shockmat::AbstractArray{Float64}, 
+#     cmat::Matrix{Float64})
+
+#     This function updates the policy function using the Euler equation.
+# """
+# function policyupdate(prices::Prices, 
+#     policymat::Matrix{Float64}, 
+#     shockmat::AbstractArray{Float64}, 
+#     cmat::Matrix{Float64})
+    
+#     impliedstate = (1 / (1 + prices.r)) * (cmat - (prices.w .* shockmat) + policymat)
+#     newguess = Matrix{Float64}(undef, size(impliedstate))
+
+#     for i in axes(impliedstate, 2)
+#         linpolate = Interpolations.linear_interpolation(impliedstate[:,i], policymat[:,i], extrapolation_bc = Interpolations.Flat())
+#         newguess[:,i] = linpolate.(policymat[:,i])
+#     end
+
+#     return newguess
+
+# end
 
 
 
@@ -349,12 +426,12 @@ function SingleRun(r::Float64, a::Aiyagari)
     # p = Params()
     # a = Aiyagari(p)
     aggs,prices = firm(r,a)
-    EGM!(a,prices)
+    policies = EGM(a,prices)
 
-    Λ = distribution_transition(a.savings, a.agrid, a.Π)
+    Λ = distribution_transition(policies.saving, a.agrid, a.Π)
     D = invariant_dist(Λ')
 
-    return SteadyState(prices, (saving = a.savings,consumption = a.consumption), D, aggs, Λ)
+    return SteadyState(prices, policies, D, aggs, Λ)
     
 end
 
@@ -371,12 +448,12 @@ function SingleRun(β,K,Z,a::Aiyagari)
     L = aggregate_labor(a)
 
     aggs,prices = firm(K,L,a)
-    EGM!(a,prices)
+    policies = EGM(a,prices)
 
-    Λ = distribution_transition(a.savings, a.agrid, a.Π)
+    Λ = distribution_transition(policies.saving, a.agrid, a.Π)
     D = invariant_dist(Λ')
 
-    return SteadyState(prices, (saving = a.savings,consumption = a.consumption ), D, aggs, Λ)
+    return SteadyState(prices, policies, D, aggs, Λ)
 end
 
 
@@ -391,7 +468,9 @@ solve_SteadyState(a::Aiyagari;
     of wealth, the prices, and the aggregate capital and labor.
 """
 function solve_SteadyState(a::Aiyagari;
-    guess = (0.01, 0.10))
+    guess = (0.015, 0.10))
+    fill!(a.s, 0.0)
+    fill!(a.s1, 0.0)
     
     r = find_zero(x -> get_residual(x,a), guess, Roots.A42())
     
@@ -402,6 +481,7 @@ end
 
 # internal function to obtain residual
 function get_residual(r_guess::Float64,a::Aiyagari)
+    println("r = $r_guess")
     ss = SingleRun(r_guess, a)
     agg_ks = ss.aggregates.K
     spolicy = vcat(ss.policies.saving...)
@@ -453,15 +533,15 @@ function plotcons_single()
     p = Params()
     a = Aiyagari(p)
     aggs,prices = firm(0.01,a)
-    EGM!(a,prices)
-    plot(a.agrid, a.consumption)
+    policies = EGM(a,prices)
+    plot(a.agrid, policies.consumption)
 end
 function run_single()
     p = Params()
     a = Aiyagari(p)
     aggs,prices = firm(0.01,a)
     for i in 1:100
-        EGM!(a,prices)
+        EGM(a,prices)
     end
 end
 

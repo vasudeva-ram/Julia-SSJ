@@ -11,6 +11,7 @@ using Plots
 using SparseArrays
 using Roots
 using NLsolve
+using Infiltrator
 
 
 include("GeneralStructures.jl")

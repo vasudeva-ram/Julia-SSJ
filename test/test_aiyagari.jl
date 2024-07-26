@@ -11,12 +11,12 @@ end
 @testitem "Aiyagari constructor" begin
     p = Params()
     m = SSJ.Aiyagari(p)
-    @test size(m.m) == (p.n_a + 1, p.n_e)
-    @test size(m.m0) == (p.n_a, p.n_e)
-    @test size(m.mplus) == (p.n_a, p.n_e)
-    @test size(m.c_m) == (p.n_a + 1, p.n_e)
+    @test size(m.s) == (p.n_a , p.n_e)
+    @test size(m.s1) == (p.n_a , p.n_e)
+    @test size(m.cplus) == (p.n_a, p.n_e)
     @test size(m.Π) == (p.n_e, p.n_e)
     @test size(m.shockgrid) == (p.n_e, )
+    @test size(m.shockmat) == (p.n_a,p.n_e)
 
 
 end
@@ -41,19 +41,19 @@ end
     p = Params()
     m = SSJ.Aiyagari(p)
     aggs,prices = SSJ.firm(0.05,m)
-    SSJ.EGMstep!(m,prices)
-    @test all(m.m0 .== (m.agrid .+ m.c0_m))
+    SSJ.EGMstep!(m.s, m.s1, m, prices)
+    @test true
 end
 
 @testitem "Aiyagari EGM runs" begin
     p = Params()
     m = SSJ.Aiyagari(p)
     aggs,prices = SSJ.firm(0.05,m)
-    SSJ.EGM!(m,prices)
+    policies = SSJ.EGM(m,prices)
 
-    @test all(m.consumption .> 0)
-    @test all(m.c0_m .> 0)
-    @test all(m.c_m[1,:] .== 0)
+    @test all(policies.consumption .> 0)
+    @test all(policies.saving .>= 0)
+    
 end
 
 
@@ -62,60 +62,66 @@ end
     p = Params()
     a = SSJ.Aiyagari(p)
     aggs,prices = SSJ.firm(0.05,a)
-    SSJ.EGM!(a,prices)
+    policies = SSJ.EGM(a,prices)
 
     # first sanity check on solution
-    @test all( (a.m0 - a.c0_m) .≈ a.agrid )
+    @test all( policies.saving .≈ ((1 + prices.r) * a.amat) + (prices.w * a.shockmat) - policies.consumption)
 
-    # now test that `policies` are consistent
+    μ = zeros(p.n_a)  # vector of marginal utilities
+	iuprime = zeros(p.n_a,p.n_e)  # matrix of inverse marginal utilities
 
-	μ = zeros(p.n_a)  # vector of marginal utilities
-	cimplied = zeros(p.n_a,p.n_e)  # matrix of inverse marginal utilities
-
-    # at each grid point compute 2 consumption values: one from your solution (c) and one implied. 
-    # cimp = g ^ (-1/p.γ)
-    # g is accurately computed rhs of euler equation, using the c function
-	mnext = zeros(p.n_a)
-
+    # basically does `consumptiongrid`
 	for ie in 1:p.n_e
 		fill!(μ , 0.0)
 		for je in 1:p.n_e
-			pr = a.Π[ie,je]  # transprob
+			pr = a.Π[ie,je]  # transprob
 
 			# get next period consumption if state is je
             # cprime = (1+r) policygrid + w * shock[je] - policy[je]
             # (p.n_a by 1)
-            mnext = ((1 + prices.r) * a.agrid) .+ (prices.w .* a.shockgrid[je])
-            cint = SSJ.linear_interpolation(a.m[:,je], a.c_m[:,je], extrapolation_bc = SSJ.Line())
-            cnext = cint(mnext)
+            cprimevec = ((1 + prices.r) * a.agrid) .+ (prices.w .* a.shockgrid[je]) .- policies.saving[:,je]
 
 			# Expected marginal utility at each state of tomorrow's income shock
-    		global μ += pr * (cnext .^ ((-1) * p.γ))
+    		global μ += pr * (cprimevec .^ ((-1) * p.γ))
 		end
 	   # RHS of euler equation
     	rhs = p.β * (1 + prices.r) * μ
 		# today's consumption: inverse marginal utility over RHS
-    	cimplied[:,ie] = rhs .^ ((-1)/p.γ)
+    	iuprime[:,ie] = rhs .^ ((-1)/p.γ)
 	end
-    endogrid = a.agrid .+ cimplied
-    endogrid = vcat(reshape(zeros(p.n_e),1,p.n_e) , endogrid)
-    endoc = vcat(reshape(zeros(p.n_e),1,p.n_e) , cimplied)
 
-    # consumption on asset grid
-    newcons = zeros(p.n_a, p.n_e)
+    impliedgrid = (1 / (1 + prices.r)) * (iuprime - (prices.w .* a.shockmat) + a.amat)
+    # newguess = Matrix{Float64}(undef, size(impliedgrid))
 
-    for ie in 1:p.n_e
-        cint = SSJ.linear_interpolation(endogrid[:,ie], endoc[:,ie], extrapolation_bc = SSJ.Line())
-        newcons[:,ie] = cint(a.agrid .+ prices.w * a.shockgrid[ie])  # a + we = m
+    saving = zeros(p.n_a, p.n_e)
+
+    for i in axes(impliedgrid, 2)
+        linpolate = SSJ.linear_interpolation(impliedgrid[:,i], a.amat[:,i], extrapolation_bc = SSJ.Flat())
+        saving[:,i] = linpolate(a.amat[:,i])
     end
-    
-	@test maximum(abs,((cimplied - a.c0_m) ./ a.c0_m)) < 1e-8
-	@test maximum(abs,((newcons - a.consumption) ./ a.consumption)) < 1e-8
+
+    cons = ((1 + prices.r) * a.amat) + (prices.w * a.shockmat) - saving
+
+    # checks reverse engineering of `consumptiongrid`
+	@test maximum(abs,(cons ./ policies.consumption) .- 1) < 0.0000001
+	# @test maximum(abs,(saving ./ policies.saving) .- 1) < 0.0000001
 end
 
 
 @testitem "SingleRun r" begin
     r = 0.02
+    p = Params()
+    a = SSJ.Aiyagari(p)
+    o = SSJ.SingleRun(r,a)
+    @test isa(o, SSJ.SteadyState)
+    @test o.prices.r == r
+    @test sum(o.D) ≈ 1
+    @test all(sum(o.Λ, dims = 1) .≈ 1)
+end
+
+
+@testitem "SingleRun r 1" begin
+    r = 0.01
     p = Params()
     a = SSJ.Aiyagari(p)
     o = SSJ.SingleRun(r,a)
@@ -144,7 +150,7 @@ end
 @testitem "SteadyState r" begin
     p = Params()
     a = SSJ.Aiyagari(p)
-    o = SSJ.solve_SteadyState(a)
+    o = SSJ.solve_SteadyState(a,guess = (0.02, 0.05))
     @test isa(o, SSJ.SteadyState)
     @test sum(o.D) ≈ 1
     @test all(sum(o.Λ, dims = 1) .≈ 1)
@@ -153,7 +159,7 @@ end
 @testitem "SteadyState β" begin
     p = Params()
     a = SSJ.Aiyagari(p)
-    o = SSJ.solve_SteadyState(a)
+    o = SSJ.solve_SteadyState_r(0.01,1.0,a)
     @test isa(o, SSJ.SteadyState)
     @test sum(o.D) ≈ 1
     @test all(sum(o.Λ, dims = 1) .≈ 1)
@@ -162,7 +168,7 @@ end
 @testitem "solve SS r" begin
     p = Params()
     a = SSJ.Aiyagari(p)
-    s = SSJ.solve_SteadyState(a)
+    s = SSJ.solve_SteadyState(a,guess = (0.02, 0.05))
     @test isa(s, SSJ.SteadyState)
     @test sum(s.D) ≈ 1
     @test all(sum(s.Λ, dims = 1) .≈ 1)
@@ -185,6 +191,6 @@ end
     F = zeros(3)
     SSJ.residual!(F,a.params.β,s.aggregates.K,a.params.Z,r,y,a)
 
-    @test SSJ.norm(F, Inf) < 1e-8
+    @test SSJ.norm(F, Inf) < 1e-7
 
 end

@@ -4,6 +4,7 @@ authors = ["Vasudeva Ramaswamy <ramaswamy@american.edu>"]
 version = "0.1.0"
 
 [deps]
+Infiltrator = "5903a43b-9cc3-4c30-8d17-598619ec4e9b"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 IterativeSolvers = "42fd0dbc-a981-5370-80f2-aaf504508153"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
