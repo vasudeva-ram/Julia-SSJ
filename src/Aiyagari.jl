@@ -239,8 +239,6 @@ function EGM(a::Aiyagari,prices::Prices)
         EGMstep!(a.s,a.s1,a,prices)  
         diff = maximum(abs,a.s - a.s1)
         # update objects with new values
-        # notice that we keep the first row always equal to zero to represent the 
-        # borrowing constraint.
         a.s[:] = a.s1
 		count += 1
     end
