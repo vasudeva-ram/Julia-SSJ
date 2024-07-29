@@ -466,7 +466,7 @@ solve_SteadyState(a::Aiyagari;
     of wealth, the prices, and the aggregate capital and labor.
 """
 function solve_SteadyState(a::Aiyagari;
-    guess = (0.015, 0.10))
+    guess = (0.02, 0.10))
     fill!(a.s, 0.0)
     fill!(a.s1, 0.0)
     

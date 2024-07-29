@@ -16,6 +16,9 @@ using Infiltrator
 
 include("GeneralStructures.jl")
 include("Aiyagari.jl")
+include("ssj_impl.jl")
+include("KrussellSmith.jl")
+include("HelperFunctions.jl")
 
 export Params
 
