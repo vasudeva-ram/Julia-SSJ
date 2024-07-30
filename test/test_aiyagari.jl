@@ -1,4 +1,5 @@
 
+
 @testitem "params" begin
     p = Params()
     @test isa(p, Params)
@@ -193,4 +194,48 @@ end
 
     @test SSJ.norm(F, Inf) < 1e-7
 
+end
+
+
+@testitem "Auclert KS SS" begin
+    # output of krusell_smith.ipynb at this line
+    # https://github.com/shade-econ/sequence-jacobian/blob/5764a6eed209458c3ef6e3dcd177493c864e6c13/notebooks/krusell_smith.ipynb#L304
+
+    using JSON
+
+    auclert_sol = JSON.parse("{\"eis\": 1,
+    \"delta\": 0.025,
+    \"alpha\": 0.11,
+    \"rho_e\": 0.966,
+    \"sd_e\": 0.5,
+    \"L\": 1.0,
+    \"nE\": 7,
+    \"nA\": 500,
+    \"amin\": 0,
+    \"amax\": 200,
+    \"beta\": 0.981952788061795,
+    \"Z\": 0.8816460975214567,
+    \"K\": 3.142857142857143,
+    \"r\": 0.010000000000000002,
+    \"w\": 0.8900000000000001,
+    \"Y\": 1.0,
+    \"A\": 3.142857142857111,
+    \"C\": 0.9214285742140562,
+    \"asset_mkt\": -3.197442310920451e-14,
+    \"goods_mkt\": -2.785484787271031e-09}")
+
+    sol,a = SSJ.AuclertKS_SS()
+    p = a.params
+
+    @test auclert_sol["alpha"] == p.α
+    @test auclert_sol["delta"] == p.δ
+    @test auclert_sol["rho_e"] == p.ρ
+    @test auclert_sol["sd_e"] == p.σ
+    @test auclert_sol["nE"] == p.n_e
+    @test auclert_sol["nA"] == p.n_a
+    @test auclert_sol["beta"] == p.β
+    @test auclert_sol["Z"] == p.Z
+    @test auclert_sol["K"] ≈ sol.aggregates.K
+    @test auclert_sol["A"] ≈ sol.aggregates.A atol=1e-6
+    @test auclert_sol["C"] ≈ sol.aggregates.C atol=1e-6
 end

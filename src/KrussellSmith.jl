@@ -104,14 +104,35 @@ function generateIRFs(solution::Solution,
     return dK
 end
 
+"exact same SS for KS as in Auclert et al"
+function AuclertKS_SS()
+    p = Params(β = 0.981952788061795,
+    Z = 0.8816460975214567,
+    n_a = 500)
+    a = Aiyagari(p)
+    SingleRun(p.β,3.142857142857143,p.Z,a),a
+end
+
+function mainAuclertKS()
+
+    ss,a = AuclertKS_SS()  # get their SS
+    solution = solveKS(a, ss) # Solve the KS model
+
+    # numbers here should be identical to J_ha['A']['r'] in their notebook?
+    @assert solution.rjacobian[1,1] == 3.04707181e+00
+
+
+end
 
 function mainKS()
 
-    p = Params(n_a = 200)
+    p = Params(n_a = 200, dx = 0.01)
     BaseModel = Aiyagari(p)
     
     ss = solve_SteadyState_r(0.01,1.0,BaseModel) # Solving for the steady state
+    return ss, BaseModel
     solution = solveKS(BaseModel, ss) # Solve the KS model
+    return solution
     # Plot the fake news matrix and Jacobian
     p1 = plot(solution.rfakeNews[:, [1, 25, 50, 75, 100]], 
                 title = "Fake News Matrix", 

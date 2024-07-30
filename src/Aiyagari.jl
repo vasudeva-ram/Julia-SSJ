@@ -212,7 +212,7 @@ function firm(r::Float64,a::Aiyagari)
     capital_demand = (((r + p.δ) /p.α )^(1/(p.α - 1))) * L
     wage = (1 - p.α) * (capital_demand / L)^p.α
 
-    return Aggregates(capital_demand,L,0), Prices(r,wage)
+    return Aggregates(NaN,NaN,capital_demand,L,0), Prices(r,wage)
 end
 
 function firm(K,L,a::Aiyagari)
@@ -220,7 +220,7 @@ function firm(K,L,a::Aiyagari)
     r = p.α * p.Z * (K / L) ^ (p.α-1) - p.δ
     w = (1 - p.α) * p.Z * (K / L) ^ p.α
     Y = p.Z * K ^ p.α * L ^ (1 - p.α)
-    return Aggregates(K,L,Y), Prices(r,w)
+    return Aggregates(NaN,NaN,K,L,Y), Prices(r,w)
 end
 
 
@@ -429,6 +429,10 @@ function SingleRun(r::Float64, a::Aiyagari)
     Λ = distribution_transition(policies.saving, a.agrid, a.Π)
     D = invariant_dist(Λ')
 
+    # add household aggregation to aggs object
+    aggs.C = D' * policies.consumption[:]
+    aggs.A = D' * policies.saving[:]
+
     return SteadyState(prices, policies, D, aggs, Λ)
     
 end
@@ -450,6 +454,11 @@ function SingleRun(β,K,Z,a::Aiyagari)
 
     Λ = distribution_transition(policies.saving, a.agrid, a.Π)
     D = invariant_dist(Λ')
+
+    # add household aggregation to aggs object
+    aggs.C = D' * policies.consumption[:]
+    aggs.A = D' * policies.saving[:]
+
 
     return SteadyState(prices, policies, D, aggs, Λ)
 end
@@ -546,7 +555,7 @@ end
 function runSS1()
     p = Params(n_a = 500)
     a = Aiyagari(p)
-    solve_SteadyState(a)
+    solve_SteadyState(a,guess = (0.012,0.05))
 end
 
 function runSS2()

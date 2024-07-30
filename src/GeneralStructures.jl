@@ -8,10 +8,12 @@ multiple dispatch to write more efficient code.
 """
 
 
-struct Aggregates
-    K
-    L
-    Y
+mutable struct Aggregates
+    A::Float64  # aggregate household savings
+    C::Float64  # aggregate household consumption
+    K::Float64  # aggregate capital demand of firms
+    L::Float64  # aggregate labor demand of firms
+    Y::Float64  # total output
 end
 
 struct Prices
