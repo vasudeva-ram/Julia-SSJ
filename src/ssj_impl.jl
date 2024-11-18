@@ -1,8 +1,11 @@
 
-function get_yso(BaseModel::AiyagariModel,
+function get_yso(BaseModel::Aiyagari,
     steadystate::SteadyState,
     input::Char;
-    dx::Union{Nothing, Float64} = nothing)
+    dx::Union{Nothing, Float64} = nothing,
+    shock_T_minus = 1)
+
+    p = BaseModel.params
 
     if isnothing(dx)
         dx = BaseModel.params.dx
@@ -13,39 +16,43 @@ function get_yso(BaseModel::AiyagariModel,
     # Creating the vector X^s_0: TODO: too verbose, make it more elegant
     if input == 'r'
         dxprice = fill(steadystate.prices.r, T) 
-        dxprice[T-1] = steadystate.prices.r + dx
+        dxprice[T-shock_T_minus] = steadystate.prices.r + dx
         price_tuples = collect(zip(dxprice, fill(steadystate.prices.w, T)))
     elseif input == 'w'
         dxprice = fill(steadystate.prices.w, T) 
-        dxprice[T-1] = steadystate.prices.w + dx
+        dxprice[T-shock_T_minus] = steadystate.prices.w + dx
         price_tuples = collect(zip(fill(steadystate.prices.r, T), dxprice))
     else
         error("input must be either 'r' or 'w'")
     end
-
+    # @infiltrate
     # Creating the Jacobian
-    yso = fill(Matrix{Float64}(undef, size(BaseModel.initialguess)), T)
+    yso = [zeros(p.n_a, p.n_e) for i in 1:T]
+    # caution
+    # julia> A = fill(Matrix{Float64}(undef, 2,2), 3)
+    # 3-element Vector{Matrix{Float64}}:
+    # [0.0 0.0; 0.0 0.0]
+    # [0.0 0.0; 0.0 0.0]
+    # [0.0 0.0; 0.0 0.0]
+
+    # julia> A[1] === A[2]
+    # true
+
+    # very subtle but the s1[:,j] does *not* create a new array hence modifies always the same one.
+
+
     yso[T] = steadystate.policies.saving
     
     for i in 1:T-1
         prices = Prices(price_tuples[T-i]...)
-        cmat = consumptiongrid(prices, 
-                            BaseModel.policymat, 
-                            BaseModel.shockmat, 
-                            yso[T+1-i], 
-                            BaseModel.Π, 
-                            BaseModel.params)
-        yso[T-i] = policyupdate(prices, 
-                            BaseModel.policymat, 
-                            BaseModel.shockmat, 
-                            cmat)
+        EGMstep!(yso[T-i+1],yso[T-i],BaseModel,prices)
     end
     
     return yso
 end
 
 
-function get_Λso(BaseModel::AiyagariModel,
+function get_Λso(BaseModel::Aiyagari,
     yso::Vector{Matrix{Float64}})
 
     T = BaseModel.params.T
@@ -54,7 +61,7 @@ function get_Λso(BaseModel::AiyagariModel,
     # but check if it should in fact be zero
     for i in 1:T-1
         Λso[T-i] = distribution_transition(yso[T-i], 
-                            BaseModel.policygrid, 
+                            BaseModel.agrid, 
                             BaseModel.Π)
     end
 
@@ -106,7 +113,9 @@ function expectationVectors(steadystate::SteadyState,
     Λss = steadystate.Λ
     yss = vcat(steadystate.policies.saving...)
     
-    𝔼 = fill(Vector{Float64}(undef, size(steadystate.D)), T-1)
+    # danger
+    # 𝔼 = fill(Vector{Float64}(undef, size(steadystate.D)), T-1)
+    𝔼 = [ zeros(size(steadystate.D)) for i in 1:(T-1) ]
     𝔼[1] = yss
     for i in 2:T-1
         𝔼[i] = Λss' * 𝔼[i-1]
@@ -172,45 +181,39 @@ Main Function that generates the fake news matrix, the Jacobian, and the impulse
 for a Krussell-Smith model using the Sequence-Space Jacobian method.
 """
 function mainSSJ()
+    p = Params(dx = 0.1)
+    a = Aiyagari(p)
     
-    # defining the parameters of the model
-    rho = 0.966
-    s = 0.5
-    sig = s * sqrt(1 - rho^2)
-    params = Params(0.98, 1.0, sig, rho, 0.025, 0.11, 0.0001, [0.0, 200.0], 200, 7, 300)
-
-    # Setting up the model
-    BaseModel::AiyagariModel = setup_Aiyagari(params)
-    steadystate::SteadyState = solve_SteadyState(BaseModel); # find the steady state
+    steadystate = solve_SteadyState(a,guess = (0.011,0.05)); # find the steady state
 
     # Get the policies (yso) and associated transition matrices (Λso)
-    yso_r = get_yso(BaseModel, steadystate, 'r')
-    Λso_r = get_Λso(BaseModel, yso_r)
+    yso_r = get_yso(a, steadystate, 'r')
+    Λso_r = get_Λso(a, yso_r)
     
     # Get yso and Λso for the "ghost run"
-    ỹso_r = get_yso(BaseModel, steadystate, 'r', dx = 0.00) 
-    ĩso_r = get_Λso(BaseModel, ỹso_r)
+    ỹso_r = get_yso(a, steadystate, 'r', dx = 0.00) 
+    ĩso_r = get_Λso(a, ỹso_r)
     
     # Get the curlyYs and curlyDs
-    curlyYs = getCurlyYs(yso_r, ỹso_r, steadystate, BaseModel.params.dx)
-    curlyDs = getCurlyDs(Λso_r, ĩso_r, steadystate, BaseModel.params.dx)
+    curlyYs = getCurlyYs(yso_r, ỹso_r, steadystate, a.params.dx)
+    curlyDs = getCurlyDs(Λso_r, ĩso_r, steadystate, a.params.dx)
 
     # Get the expectation vectors
-    𝔼 = expectationVectors(steadystate, BaseModel.params.T)
+    𝔼 = expectationVectors(steadystate, a.params.T)
 
-    # Create the fake news matrix
+    # # Create the fake news matrix
     fakeNews = createFakeNewsMatrix(curlyYs, curlyDs, 𝔼)
 
-    # Create the Jacobian
+    # # Create the Jacobian
     Jacobian = createJacobian(fakeNews)
 
-    # Plot the fake news matrix and the Jacobian
+    # # Plot the fake news matrix and the Jacobian
     p1 = plot(fakeNews[:, [1, 25, 50, 75, 100]], title = "Fake News Matrix", label = ["t = 1" "t = 25" "t = 50" "t = 75" "t = 100"])
-    display(p1)
+    # display(p1)
     p2 = plot(Jacobian[:, [1, 25, 50, 75, 100]], title = "Jacobian", label = ["t = 1" "t = 25" "t = 50" "t = 75" "t = 100"])
-    display(p2)
+    # display(p2)
 
-    return fakeNews, Jacobian
+    return fakeNews, Jacobian, p1,p2
 
 end
 
